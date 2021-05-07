@@ -174,3 +174,20 @@ class NanoRC:
         Send scrap command
         """
         ok, failed = self.send_many('scrap', None, 'CONFIGURED', 'INITIAL', raise_on_fail=True)
+
+    def record(self, seconds: int):
+        """
+        Sends record command
+
+        :param       seconds:  Number of seconds to record
+        :type        seconds:  int
+        """
+        runtime_record_data = {
+            "duration": seconds
+        }
+
+        record_data = self.cfg.runtime_record(runtime_record_data)
+
+        print(record_data)
+
+        ok, failed = self.send_many('record', record_data, 'RUNNING', 'RUNNING', raise_on_fail=True)

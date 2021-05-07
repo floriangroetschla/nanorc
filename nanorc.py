@@ -160,6 +160,12 @@ def terminate(obj):
     obj.rc.terminate()
     obj.rc.status()
 
+@cli.command('record')
+@click.pass_obj
+@click.argument('seconds', type=int)
+def record(obj, seconds):
+    obj.rc.record(seconds)
+    obj.rc.status()
 
 @cli.command('wait')
 @click.pass_obj

@@ -59,7 +59,7 @@ class ConfigManager:
     def _load(self) -> None:
 
         cfgs = {}
-        cmds = ["init", "conf", "start", "stop", "pause", "resume", "scrap"]
+        cmds = ["init", "conf", "start", "stop", "pause", "resume", "scrap", "record"]
         for f in ["boot"] + cmds:
             fpath = os.path.join(self.cfg_dir, f + ".json")
             if not os.path.exists(fpath):
@@ -131,6 +131,22 @@ class ConfigManager:
             for m in c:
                 m["data"] = data
         return resume
+
+    def runtime_record(self, data: dict) -> dict:
+        """
+        Generates runtime record parameter set
+        :param      data:  The data
+        :type       data:  dict
+
+        :returns:   Complete parameter set.
+        :rtype:     dict
+        """
+        record = copy.deepcopy(self.record)
+
+        for c in json_extract(record, "modules"):
+            for m in c:
+                m["data"] = data
+        return record
 
 
 if __name__ == "__main__":
