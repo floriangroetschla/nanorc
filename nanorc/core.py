@@ -6,8 +6,10 @@ from rich.table import Table
 from rich.text import Text
 from .sshpm import SSHProcessManager
 from .cfgmgr import ConfigManager
-from .appctrl import AppSupervisor
+from .appctrl import AppSupervisor, ResponseListener
 from rich.traceback import Traceback
+
+from typing import Union, NoReturn
 
 class NanoRC:
     """A Shonky RC for DUNE DAQ"""
@@ -20,9 +22,15 @@ class NanoRC:
 
         self.pm = SSHProcessManager(console)
         self.apps = None
+        self.listener = None
 
-
-    def status(self) -> None:
+    def status(self) -> NoReturn:
+        """
+        Displays the status of the applications
+        
+        :returns:   Nothing
+        :rtype:     None
+        """
 
         if not self.apps:
             return
@@ -36,12 +44,12 @@ class NanoRC:
         table.add_column("last succ. cmd", style="green")
 
         for app, sup in self.apps.items():
-            alive = sup.handle.proc.is_alive()
+            alive = sup.desc.proc.is_alive()
             ping = sup.commander.ping()
             last_cmd_failed = (sup.last_sent_command != sup.last_ok_command)
             table.add_row(
                 app, 
-                sup.handle.host,
+                sup.desc.host,
                 str(alive),
                 str(ping),
                 Text(str(sup.last_sent_command), style=('bold red' if last_cmd_failed else '')),
@@ -50,7 +58,7 @@ class NanoRC:
         self.console.print(table)
 
 
-    def send_many(self, cmd: str, data: dict, state_entry: str, state_exit: str, sequence: list = None, raise_on_fail: bool =False):
+    def send_many(self, cmd: str, data: dict, state_entry: str, state_exit: str, sequence: list = None, raise_on_fail: bool=False):
         """
         Sends many commands to all applications
         
@@ -76,11 +84,17 @@ class NanoRC:
             r = self.apps[n].send_command(cmd, data[n] if data else {}, state_entry, state_exit)
             (ok if r['success'] else failed)[n] = r
         if raise_on_fail and failed:
+            self.log.error(f"ERROR: Failed to execute '{cmd}' on {', '.join(failed.keys())} applications")
+            for a,r in failed.items():
+                self.log.error(f"{a}: {r}")
             raise RuntimeError(f"ERROR: Failed to execute '{cmd}' on {', '.join(failed.keys())} applications")
         return ok, failed
 
 
-    def boot(self) -> None:
+    def boot(self) -> NoReturn:
+        """
+        Boots applications
+        """
         
         self.log.info(str(self.cfg.boot))
 
@@ -90,30 +104,36 @@ class NanoRC:
             self.console.print_exception()
             return
 
-        self.apps = { n:AppSupervisor(self.console, h) for n,h in self.pm.apps.items() }
+        self.listener = ResponseListener(self.cfg.boot["response_listener"]["port"])
+        self.apps = { n:AppSupervisor(self.console, d, self.listener) for n,d in self.pm.apps.items() }
 
-
-    def terminate(self):
+    def terminate(self) -> NoReturn:
         if self.apps:
-            for s in self.apps.values():
+            for n,s in self.apps.items():
                 s.terminate()
+                if self.listener:
+                    self.listener.unregister(n)
             self.apps = None
+        if self.listener:
+            self.listener.terminate()
+
         self.pm.terminate()
+    
 
 
-    def init(self):
+    def init(self) -> NoReturn:
         """
         Initializes the applications.
         """
         ok, failed = self.send_many('init', self.cfg.init, 'NONE', 'INITIAL', raise_on_fail=True)
 
-    def conf(self):
+    def conf(self) -> NoReturn:
         """
         Sends configure command to the applications.
         """
         ok, failed = self.send_many('conf', self.cfg.conf, 'INITIAL', 'CONFIGURED', raise_on_fail=True)
 
-    def start(self, run: int, disable_data_storage: bool, trigger_interval_ticks: int):
+    def start(self, run: int, disable_data_storage: bool, trigger_interval_ticks: Union[int, None]) -> NoReturn:
         """
         Sends start command to the applications
         
@@ -127,15 +147,17 @@ class NanoRC:
         runtime_start_data = {
                 "disable_data_storage": disable_data_storage,
                 "run": run,
-                "trigger_interval_ticks": trigger_interval_ticks
             }
+
+        if not trigger_interval_ticks is None:
+            runtime_start_data["trigger_interval_ticks"] = trigger_interval_ticks
 
         start_data = self.cfg.runtime_start(runtime_start_data)
         app_seq = getattr(self.cfg, 'start_order', None)
         ok, failed = self.send_many('start', start_data, 'CONFIGURED', 'RUNNING', sequence=app_seq, raise_on_fail=True)
 
 
-    def stop(self):
+    def stop(self) -> NoReturn:
         """
         Sends stop command
         """
@@ -144,7 +166,7 @@ class NanoRC:
         ok, failed = self.send_many('stop', self.cfg.stop, 'RUNNING', 'CONFIGURED', sequence=app_seq, raise_on_fail=True)
 
 
-    def pause(self):
+    def pause(self) -> NoReturn:
         """
         Sends pause command
         """
@@ -152,16 +174,17 @@ class NanoRC:
         ok, failed = self.send_many('pause', None, 'RUNNING', 'RUNNING', app_seq, raise_on_fail=True)
 
 
-    def resume(self, trigger_interval_ticks: int):
+    def resume(self, trigger_interval_ticks: Union[int, None]) -> NoReturn:
         """
         Sends resume command
         
         :param      trigger_interval_ticks:  The trigger interval ticks
         :type       trigger_interval_ticks:  int
         """
-        runtime_resume_data = {
-            "trigger_interval_ticks": trigger_interval_ticks
-        }
+        runtime_resume_data = {}
+
+        if not trigger_interval_ticks is None:
+            runtime_resume_data["trigger_interval_ticks"] = trigger_interval_ticks
 
         resume_data = self.cfg.runtime_resume(runtime_resume_data)
 
@@ -169,7 +192,7 @@ class NanoRC:
         ok, failed = self.send_many('resume', resume_data, 'RUNNING', 'RUNNING', sequence=app_seq, raise_on_fail=True)
 
 
-    def scrap(self):
+    def scrap(self) -> NoReturn:
         """
         Send scrap command
         """
