@@ -76,10 +76,14 @@ class NanoRC:
         :type       raise_on_fail:  bool
         """
 
-        # Loop over data keys if no sequence is specified or all apps, if data is emoty
+        ok, failed = {}, {}
+        if not self.apps:
+            self.log.warning(f"No applications defined to send '{cmd}' to. Has 'boot' been executed?")
+            return ok, failed
+
+        # Loop over data keys if no sequence is specified or all apps, if data is empty
         if not sequence:
             sequence = data.keys() if data else self.apps.keys()
-        ok, failed = {}, {}
         for n in sequence:
             r = self.apps[n].send_command(cmd, data[n] if data else {}, state_entry, state_exit)
             (ok if r['success'] else failed)[n] = r
@@ -96,7 +100,7 @@ class NanoRC:
         Boots applications
         """
         
-        self.log.info(str(self.cfg.boot))
+        self.log.debug(str(self.cfg.boot))
 
         try:
             self.pm.boot(self.cfg.boot)
@@ -117,6 +121,7 @@ class NanoRC:
         if self.listener:
             self.listener.terminate()
 
+        self.log.warning("Terminating")
         self.pm.terminate()
     
 
@@ -131,9 +136,10 @@ class NanoRC:
         """
         Sends configure command to the applications.
         """
-        ok, failed = self.send_many('conf', self.cfg.conf, 'INITIAL', 'CONFIGURED', raise_on_fail=True)
+        app_seq = getattr(self.cfg, 'conf_order', None)
+        ok, failed = self.send_many('conf', self.cfg.conf, 'INITIAL', 'CONFIGURED', sequence=app_seq, raise_on_fail=True)
 
-    def start(self, run: int, disable_data_storage: bool, trigger_interval_ticks: Union[int, None]) -> NoReturn:
+    def start(self, run: int, disable_data_storage: bool) -> NoReturn:
         """
         Sends start command to the applications
         
@@ -149,8 +155,9 @@ class NanoRC:
                 "run": run,
             }
 
-        if not trigger_interval_ticks is None:
-            runtime_start_data["trigger_interval_ticks"] = trigger_interval_ticks
+        # TODO: delete 
+        # if not trigger_interval_ticks is None:
+        #     runtime_start_data["trigger_interval_ticks"] = trigger_interval_ticks
 
         start_data = self.cfg.runtime_start(runtime_start_data)
         app_seq = getattr(self.cfg, 'start_order', None)
@@ -171,7 +178,7 @@ class NanoRC:
         Sends pause command
         """
         app_seq = getattr(self.cfg, 'pause_order', None)
-        ok, failed = self.send_many('pause', None, 'RUNNING', 'RUNNING', app_seq, raise_on_fail=True)
+        ok, failed = self.send_many('pause', self.cfg.pause, 'RUNNING', 'RUNNING', app_seq, raise_on_fail=True)
 
 
     def resume(self, trigger_interval_ticks: Union[int, None]) -> NoReturn:
@@ -196,7 +203,8 @@ class NanoRC:
         """
         Send scrap command
         """
-        ok, failed = self.send_many('scrap', None, 'CONFIGURED', 'INITIAL', raise_on_fail=True)
+	app_seq = getattr(self.cfg, 'scrap_order', None)
+        ok, failed = self.send_many('scrap', self.cfg.scrap, 'CONFIGURED', 'INITIAL', sequence=app_seq, raise_on_fail=True)
 
     def record(self, seconds: int):
         """

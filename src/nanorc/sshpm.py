@@ -88,10 +88,14 @@ class AppProcessWatcherThread(threading.Thread):
         self.proc = proc
 
     def run(self):
+
+        exc = None
         try:
             self.proc.wait()
         except sh.ErrorReturnCode as e:
-            self.pm.notify_error(self.app, e)
+            exc = e
+
+        self.pm.notify_join(self.app, self, exc)
 
 
 # ---
@@ -113,7 +117,6 @@ class SSHProcessManager(object):
         self.apps = {}
         self.watchers = []
         self.event_queue = queue.Queue()
-        self.terminating = False
 
         # Add self to the list of instances
         self.__instances.add(self)
@@ -129,8 +132,9 @@ class SSHProcessManager(object):
 
         self.watchers.append(t)
 
-    def notify_error(self, name, exc):
-        self.log.info(name+str(exc))
+    def notify_join(self, name, watcher, exc):
+        self.log.info(f"{name} process exited"+(f" with exit code {exc.exit_code}" if exc else ""))
+        self.log.debug(name+str(exc))
         self.event_queue.put((name, exc))
 
     def boot(self, boot_info):
@@ -160,7 +164,7 @@ class SSHProcessManager(object):
                 "APP_PORT": app_conf["port"],
                 "APP_WD": os.getcwd()
                 })
-            cmd=';'.join([ f"export {n}={v}" for n,v in app_vars.items()] + boot_info['exec'][app_conf['exec']]['cmd'])
+            cmd=';'.join([ f"export {n}=\"{v}\"" for n,v in app_vars.items()] + boot_info['exec'][app_conf['exec']]['cmd'])
 
             log_file = f'log_{app_name}_{app_conf["port"]}.txt'
 
@@ -257,7 +261,7 @@ class SSHProcessManager(object):
                 try:
                     desc.proc.terminate()
                 except OSError:
-                   pass
+                    pass
         self.apps = {}
 
     def kill(self):
@@ -266,7 +270,7 @@ class SSHProcessManager(object):
                 try:
                     desc.proc.kill()
                 except OSError:
-                   pass
+                    pass
         self.apps = {}
 
 # Cleanup before exiting

@@ -8,9 +8,12 @@
 #         f.readlines()
 
 import os
+import re
 import time
 import json
 import threading
+import click
+
 
 from rich.console import Console
 from rich.table import Table
@@ -21,8 +24,6 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 from multiprocessing import Queue
-
-
 
 console = Console()
 
@@ -168,42 +169,17 @@ class InfoThread(threading.Thread):
                     self.queue.put(j)
         print("Farewell!")
 
+@click.command()
+@click.argument('info_jsons', type=click.Path(), nargs=-1)
+def cli(info_jsons):
 
-# def old():
-#     fname = "info_ruemu_df_3334.json"
-#     # fname = "info_trgemu_3333.json"
-#     with open(fname, 'rb') as f:
-#         f.seek(-2, os.SEEK_END)
-#         while f.read(1) != b'\n':
-#             f.seek(-2, os.SEEK_CUR)
-#         last_line = f.readline().decode()
-#         j = json.loads(last_line[:-1])
+    info_re = re.compile('^info_.*\.json$')
+    if not info_jsons:
+        info_jsons = tuple(f for f in os.listdir() if info_re.match(f))
 
-#         t = info_to_table(j, 'ruemu_df')
-#         console.log(t)
-
-#         layout = make_layout()
-#         layout['body'].update(t)
-#         # console.print(layout)
-
-#         # with Live(layout, refresh_per_second=2, screen=True):
-#         while True:
-#             time.sleep(1)
-#             l = f.readline().decode()
-#             if l:
-#                 j = json.loads(l[:-1])
-#                 t = info_to_table(j, 'ruemu_df')
-#                 console.log(t)
-
-
-
-def main():
-
-    t_trgemu = InfoThread("info_trgemu_3333.json", 1)
-    t_trgemu.start()
-
-    t_ruemu_df = InfoThread("info_ruemu_df_3334.json", 1)
-    t_ruemu_df.start()
+    info_threads = {j: InfoThread(j, 1) for j in info_jsons}
+    for a, t in info_threads.items(): 
+        t.start()
 
     layout = make_layout()
     layout["header"].update(Panel(Text("nano Opmon", justify="center")))
@@ -214,7 +190,7 @@ def main():
         with Live(layout, refresh_per_second=2, screen=True):
             while True:
 
-                for app, trd in [("trgemu", t_trgemu), ("ruemu_df", t_ruemu_df)]:
+                for app, trd in info_threads.items():
                     j = None
                     try:
                         j = trd.queue.get(block=False)
@@ -227,12 +203,13 @@ def main():
                 time.sleep(1)
 
     except KeyboardInterrupt:
-        t_trgemu.running = False
-        t_ruemu_df.running = False
-        t_trgemu.join()
-        t_ruemu_df.join()
+        for a, t in info_threads.items(): 
+            t.running = False
+        for a, t in info_threads.items(): 
+            t.join()
 
-
+def main():
+    cli()
 
 if __name__ == '__main__':
     main()
