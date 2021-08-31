@@ -8,6 +8,7 @@ from .sshpm import SSHProcessManager
 from .cfgmgr import ConfigManager
 from .appctrl import AppSupervisor, ResponseListener
 from rich.traceback import Traceback
+import time
 
 from typing import Union, NoReturn
 
@@ -147,12 +148,11 @@ class NanoRC:
         :type       run:                     int
         :param      disable_data_storage:    The disable data storage
         :type       disable_data_storage:    bool
-        :param      trigger_interval_ticks:  The trigger interval ticks
-        :type       trigger_interval_ticks:  int
         """
         runtime_start_data = {
                 "disable_data_storage": disable_data_storage,
                 "run": run,
+		"start_time": time.clock_gettime_ns(time.CLOCK_REALTIME)
             }
 
         # TODO: delete 
@@ -202,8 +202,8 @@ class NanoRC:
     def scrap(self) -> NoReturn:
         """
         Send scrap command
-        """
-	app_seq = getattr(self.cfg, 'scrap_order', None)
+        """	
+        app_seq = getattr(self.cfg, 'scrap_order', None)
         ok, failed = self.send_many('scrap', self.cfg.scrap, 'CONFIGURED', 'INITIAL', sequence=app_seq, raise_on_fail=True)
 
     def record(self, seconds: int):
